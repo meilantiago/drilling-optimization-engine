@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "drillopt-engine"
+version = "0.1.0"
+description = "Real-Time Drilling Mechanics, Mechanical Specific Energy (MSE) & Dysfunction Detection Tool"
+authors = [
+    { name = "Tiago Meilan", email = "meilantiago@gmail.com" }
+]
+license = { text = "MIT" }
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "numpy>=1.26.0",
+    "pandas>=2.1.0",
+    "scipy>=1.11.0",
+    "pyarrow>=14.0.0",
+    "lasio>=0.31",
+    "scikit-learn>=1.3.0",
+    "plotly>=5.18.0",
+    "streamlit>=1.30.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+addopts = "-v --tb=short"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
