@@ -103,6 +103,82 @@ DEFAULT_FORMATIONS: List[FormationLayer] = [
 ]
 
 
+def create_randomized_formations(
+    rng: np.random.Generator,
+    start_depth_m: float = 2000.0,
+    end_depth_m: float = 2500.0,
+) -> List[FormationLayer]:
+    """Generates a randomized geological column with realistic physical stratigraphy."""
+    span = end_depth_m - start_depth_m
+    t1 = start_depth_m + span * float(rng.uniform(0.20, 0.28))
+    t2 = start_depth_m + span * float(rng.uniform(0.44, 0.52))
+    t3 = start_depth_m + span * float(rng.uniform(0.68, 0.76))
+    t4 = start_depth_m + span * float(rng.uniform(0.88, 0.94))
+
+    return [
+        FormationLayer(
+            name="Shale",
+            top_depth_m=start_depth_m,
+            bottom_depth_m=round(t1, 1),
+            ucs_psi=float(rng.normal(8000.0, 500.0)),
+            gamma_mean_api=float(rng.normal(110.0, 6.0)),
+            gamma_std_api=8.0,
+            friction_coeff=float(rng.uniform(0.25, 0.32)),
+            founder_wob_klbf=float(rng.uniform(22.0, 26.0)),
+            stick_slip_susceptibility=0.15,
+            drillability_k=float(rng.uniform(1.05, 1.20)),
+        ),
+        FormationLayer(
+            name="Sandstone",
+            top_depth_m=round(t1, 1),
+            bottom_depth_m=round(t2, 1),
+            ucs_psi=float(rng.normal(12000.0, 800.0)),
+            gamma_mean_api=float(rng.normal(48.0, 5.0)),
+            gamma_std_api=6.0,
+            friction_coeff=float(rng.uniform(0.32, 0.38)),
+            founder_wob_klbf=float(rng.uniform(30.0, 35.0)),
+            stick_slip_susceptibility=0.25,
+            drillability_k=float(rng.uniform(0.90, 1.05)),
+        ),
+        FormationLayer(
+            name="Limestone",
+            top_depth_m=round(t2, 1),
+            bottom_depth_m=round(t3, 1),
+            ucs_psi=float(rng.normal(22000.0, 1200.0)),
+            gamma_mean_api=float(rng.normal(28.0, 4.0)),
+            gamma_std_api=5.0,
+            friction_coeff=float(rng.uniform(0.42, 0.49)),
+            founder_wob_klbf=float(rng.uniform(36.0, 41.0)),
+            stick_slip_susceptibility=0.75,
+            drillability_k=float(rng.uniform(0.65, 0.75)),
+        ),
+        FormationLayer(
+            name="Dolomite",
+            top_depth_m=round(t3, 1),
+            bottom_depth_m=round(t4, 1),
+            ucs_psi=float(rng.normal(28000.0, 1500.0)),
+            gamma_mean_api=float(rng.normal(18.0, 3.0)),
+            gamma_std_api=4.0,
+            friction_coeff=float(rng.uniform(0.48, 0.55)),
+            founder_wob_klbf=float(rng.uniform(40.0, 45.0)),
+            stick_slip_susceptibility=0.90,
+            drillability_k=float(rng.uniform(0.50, 0.60)),
+        ),
+        FormationLayer(
+            name="Sandstone_Lower",
+            top_depth_m=round(t4, 1),
+            bottom_depth_m=end_depth_m,
+            ucs_psi=float(rng.normal(11500.0, 700.0)),
+            gamma_mean_api=float(rng.normal(52.0, 5.0)),
+            gamma_std_api=7.0,
+            friction_coeff=float(rng.uniform(0.31, 0.36)),
+            founder_wob_klbf=float(rng.uniform(28.0, 33.0)),
+            stick_slip_susceptibility=0.20,
+            drillability_k=float(rng.uniform(0.95, 1.10)),
+        ),
+    ]
+
+
 class DrillingDataGenerator:
     """
     Simulates high-resolution, physics-coupled drilling telemetry.
@@ -114,13 +190,14 @@ class DrillingDataGenerator:
         bit_diameter_in: float = 8.5,
         mud_weight_ppg: float = 10.2,
         formations: Optional[List[FormationLayer]] = None,
-        random_seed: int = 42,
+        random_seed: Optional[int] = 42,
     ):
         self.bit_diameter_in = bit_diameter_in
         self.mud_weight_ppg = mud_weight_ppg
         self.bit_area_in2 = (np.pi / 4.0) * (bit_diameter_in ** 2)
-        self.formations = formations if formations is not None else DEFAULT_FORMATIONS
+        self.random_seed = random_seed
         self.rng = np.random.default_rng(random_seed)
+        self.formations = formations if formations is not None else DEFAULT_FORMATIONS
 
     def _get_formation_at_depth(self, depth_m: float) -> FormationLayer:
         """Finds the active formation layer corresponding to a measured depth."""
@@ -386,13 +463,26 @@ def generate_benchmark_files(
     output_dir: Union[str, Path] = "data/processed",
     start_depth: float = 2000.0,
     end_depth: float = 2500.0,
+    random_seed: Optional[int] = 42,
+    randomize_formations: bool = False,
 ) -> Tuple[Path, Path]:
     """
     Convenience function to generate and save standard benchmark files:
     `data/processed/benchmark_drilling.parquet` and
     `data/processed/benchmark_drilling.las`.
+
+    When `randomize_formations=True`, randomly jitters formation thicknesses,
+    boundaries, and UCS to simulate a completely new physical well.
     """
-    generator = DrillingDataGenerator()
+    rng = np.random.default_rng(random_seed)
+    formations = None
+    if randomize_formations:
+        formations = create_randomized_formations(rng, start_depth_m=start_depth, end_depth_m=end_depth)
+
+    generator = DrillingDataGenerator(
+        formations=formations,
+        random_seed=random_seed,
+    )
     df = generator.generate_profile(start_depth_m=start_depth, end_depth_m=end_depth)
 
     out_dir = Path(output_dir)

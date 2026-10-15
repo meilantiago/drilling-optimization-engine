@@ -17,6 +17,7 @@ Project: DrillOpt-Engine
 """
 
 import os
+import time
 from pathlib import Path
 from typing import Optional
 import numpy as np
@@ -27,6 +28,10 @@ import streamlit as st
 from src.data.loader import DrillingDataLoader
 from src.data.generator import generate_benchmark_files
 from src.data.rig_state import RigStateClassifier, RigState
+from src.app.components.live_stream import (
+    create_live_oscilloscope_plot,
+    evaluate_realtime_alarm,
+)
 from src.physics.mse import teale_mse, dupriest_mse, mechanical_efficiency
 from src.dynamics.stick_slip import (
     analyze_torsional_welch,
@@ -145,8 +150,8 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 # Data Loading & Initialization Helper Functions
 # =============================================================================
 @st.cache_data(show_spinner="Loading drilling dataset...")
-def load_default_benchmark() -> pd.DataFrame:
-    """Loads or generates benchmark drilling telemetry."""
+def load_default_benchmark(seed: int = 42) -> pd.DataFrame:
+    """Loads or generates benchmark drilling telemetry with explicit seed key."""
     base_dir = PROJECT_ROOT / "data" / "processed"
     parquet_path = base_dir / "benchmark_drilling.parquet"
     las_path = base_dir / "benchmark_drilling.las"
@@ -157,14 +162,15 @@ def load_default_benchmark() -> pd.DataFrame:
         return DrillingDataLoader.load_file(las_path)
     else:
         # Generate new benchmark files if not present
-        pq, _ = generate_benchmark_files(output_dir=str(base_dir))
+        pq, _ = generate_benchmark_files(output_dir=str(base_dir), random_seed=seed)
         return DrillingDataLoader.load_file(pq)
 
 
 def get_dataset(choice: str, uploaded_file) -> pd.DataFrame:
     """Retrieves dataframe based on user sidebar selection."""
+    curr_seed = st.session_state.get("benchmark_seed", 42)
     if choice == "Benchmark Dataset":
-        return load_default_benchmark()
+        return load_default_benchmark(seed=curr_seed)
     elif choice == "Upload Custom Log" and uploaded_file is not None:
         file_ext = Path(uploaded_file.name).suffix.lower()
         # Save temp file for lasio / loaders
@@ -175,7 +181,7 @@ def get_dataset(choice: str, uploaded_file) -> pd.DataFrame:
             f.write(uploaded_file.getbuffer())
         return DrillingDataLoader.load_file(temp_path)
     else:
-        return load_default_benchmark()
+        return load_default_benchmark(seed=curr_seed)
 
 
 # =============================================================================
@@ -186,10 +192,21 @@ with st.sidebar:
     st.markdown("*Autonomous Drilling Mechanics & MSE Optimization*")
     st.markdown("---")
 
-    # 1. Dataset Selection
-    st.markdown("### 📁 Telemetry Ingestion")
+    # 1. Surveillance Mode Selector
+    st.markdown("### 📡 Surveillance Mode")
+    surveillance_mode = st.radio(
+        "Operating Mode:",
+        ["🔴 Live RTOC Streaming Simulation", "📊 Complete Section Review"],
+        index=0,
+        help="Switch between second-by-second live drilling playback and static full-well review.",
+    )
+
+    st.markdown("---")
+
+    # 2. Dataset Selection
+    st.markdown("### 📁 Telemetry Source")
     dataset_option = st.radio(
-        "Select Telemetry Source:",
+        "Select Telemetry Ingestion:",
         ["Benchmark Dataset", "Upload Custom Log"],
         help="Benchmark includes stratified formations, founder tests, and vibration dynamics.",
     )
@@ -202,15 +219,23 @@ with st.sidebar:
         )
 
     if st.button("🔄 Regenerate Benchmark Run", use_container_width=True):
-        with st.spinner("Generating physical drilling simulation..."):
-            generate_benchmark_files(output_dir=str(PROJECT_ROOT / "data" / "processed"))
+        with st.spinner("Generating physical drilling simulation with fresh stratigraphy..."):
+            new_seed = int(np.random.randint(1000, 999999))
+            generate_benchmark_files(
+                output_dir=str(PROJECT_ROOT / "data" / "processed"),
+                random_seed=new_seed,
+                randomize_formations=True,
+            )
             st.cache_data.clear()
-            st.success("New benchmark profile generated!")
+            st.session_state["benchmark_seed"] = new_seed
+            st.session_state["stream_idx"] = 120
+            st.session_state["is_streaming"] = False
+            st.success(f"New wellbore profile generated! (Seed #{new_seed})")
             st.rerun()
 
     st.markdown("---")
 
-    # 2. Wellbore Configuration Inputs
+    # 3. Wellbore Configuration Inputs
     st.markdown("### 🛠️ Rig & Wellbore Setup")
     bit_diam_in = st.number_input(
         "Bit Outer Diameter (in)",
@@ -266,64 +291,129 @@ if "mse_psi" not in df.columns:
 if "ssi" not in df.columns:
     df["ssi"] = compute_rolling_stick_slip_index(df["rpm"], window_samples=25).fillna(0.2)
 
-# Measured depth filter in sidebar
 d_min_total = float(df["depth"].min())
 d_max_total = float(df["depth"].max())
 
-with st.sidebar:
-    depth_window = st.slider(
-        "Measured Depth Interval (m)",
-        min_value=d_min_total,
-        max_value=d_max_total,
-        value=(d_min_total, d_max_total),
-        step=5.0,
-    )
+# Initialize streaming session state
+if "stream_idx" not in st.session_state:
+    st.session_state["stream_idx"] = 120
+if "is_streaming" not in st.session_state:
+    st.session_state["is_streaming"] = False
 
-# Apply interval filter
-df_filtered = df[(df["depth"] >= depth_window[0]) & (df["depth"] <= depth_window[1])].copy()
-if df_filtered.empty:
-    df_filtered = df.copy()
+# =============================================================================
+# Surveillance Mode: Real-Time Stream vs Complete Log Review
+# =============================================================================
+if surveillance_mode == "🔴 Live RTOC Streaming Simulation":
+    # Bound stream_idx within dataframe
+    cur_idx = int(np.clip(st.session_state.get("stream_idx", 120), 10, len(df) - 1))
+    st.session_state["stream_idx"] = cur_idx
+    cur_row = df.iloc[cur_idx]
+    cur_depth_val = float(cur_row["depth"])
+
+    # Sidebar bit position scrubber
+    with st.sidebar:
+        st.markdown("### 🎛️ Live Bit Positioning")
+        scrub_depth = st.slider(
+            "Current Bit Depth (m)",
+            min_value=d_min_total,
+            max_value=d_max_total,
+            value=cur_depth_val,
+            step=1.0,
+            help="Drag to manually scrub the bit position anywhere along the wellbore timeline.",
+        )
+        if abs(scrub_depth - cur_depth_val) > 0.4:
+            st.session_state["stream_idx"] = int(np.argmin(np.abs(df["depth"].values - scrub_depth)))
+            cur_idx = st.session_state["stream_idx"]
+            cur_row = df.iloc[cur_idx]
+            cur_depth_val = float(cur_row["depth"])
+
+        stream_speed = st.select_slider(
+            "Streaming Speed:",
+            options=["Realistic (0.30s)", "Normal (0.12s)", "High Speed (0.04s)"],
+            value="Normal (0.12s)",
+        )
+
+    # Active dataset is the section drilled so far down to the bit
+    df_filtered = df.iloc[: cur_idx + 1].copy()
+    depth_window = (d_min_total, cur_depth_val)
+
+    # Instantaneous Metrics
+    cur_rop = float(cur_row["rop"])
+    cur_wob = float(cur_row["wob"])
+    cur_rpm = float(cur_row["rpm"])
+    cur_mse = float(cur_row["mse_psi"])
+    cur_ssi = float(cur_row["ssi"])
+    cur_rig_state = str(cur_row["rig_state"])
+    cur_formation = str(cur_row.get("formation", "Vaca Muerta Shale"))
+
+    # Active drilling slice
+    active_drilling_slice = df_filtered[df_filtered["rig_state"] == RigState.DRILLING_ROTARY.value]
+    if active_drilling_slice.empty:
+        active_drilling_slice = df_filtered
+
+else:
+    # Complete Section Review
+    with st.sidebar:
+        st.markdown("### ⏱️ Trajectory Interval Filter")
+        depth_window = st.slider(
+            "Measured Depth Interval (m)",
+            min_value=d_min_total,
+            max_value=d_max_total,
+            value=(d_min_total, d_max_total),
+            step=5.0,
+        )
+
+    df_filtered = df[(df["depth"] >= depth_window[0]) & (df["depth"] <= depth_window[1])].copy()
+    if df_filtered.empty:
+        df_filtered = df.copy()
+
+    active_drilling_slice = df_filtered[df_filtered["rig_state"] == RigState.DRILLING_ROTARY.value]
+    if active_drilling_slice.empty:
+        active_drilling_slice = df_filtered
+
+    cur_rop = float(active_drilling_slice["rop"].mean())
+    cur_wob = float(active_drilling_slice["wob"].mean())
+    cur_rpm = float(active_drilling_slice["rpm"].mean())
+    cur_mse = float(active_drilling_slice["mse_psi"].mean())
+    cur_ssi = float(active_drilling_slice["ssi"].iloc[-1]) if len(active_drilling_slice) > 0 else 0.25
+    cur_rig_state = str(df_filtered["rig_state"].iloc[-1]) if len(df_filtered) > 0 else "UNKNOWN"
+    cur_formation = str(df_filtered.get("formation", pd.Series(["Vaca Muerta"])).iloc[-1])
 
 # =============================================================================
 # Executive Header & KPI Cards
 # =============================================================================
 st.markdown("## 📡 Real-Time Drilling Operations Console")
-st.markdown(
-    f"*Monitoring Measured Depth Interval **{depth_window[0]:.1f} m** to **{depth_window[1]:.1f} m** "
-    f"({depth_window[1] - depth_window[0]:.1f} m total span)*"
-)
-
-# Active drilling slice
-active_drilling_slice = df_filtered[df_filtered["rig_state"] == RigState.DRILLING_ROTARY.value]
-if active_drilling_slice.empty:
-    active_drilling_slice = df_filtered
-
-cur_rop = float(active_drilling_slice["rop"].mean())
-cur_wob = float(active_drilling_slice["wob"].mean())
-cur_rpm = float(active_drilling_slice["rpm"].mean())
-cur_mse = float(active_drilling_slice["mse_psi"].mean())
-cur_ssi = float(active_drilling_slice["ssi"].iloc[-1]) if len(active_drilling_slice) > 0 else 0.25
-cur_rig_state = str(df_filtered["rig_state"].iloc[-1]) if len(df_filtered) > 0 else "UNKNOWN"
+if surveillance_mode == "🔴 Live RTOC Streaming Simulation":
+    st.markdown(
+        f"*🔴 **LIVE MWD TELEMETRY STREAMING** — Bit Depth: **{cur_depth_val:.1f} m** | Active Formation: **{cur_formation}** | Total Section Target: **{d_max_total:.1f} m***"
+    )
+else:
+    st.markdown(
+        f"*Historical Review — Measured Depth Interval **{depth_window[0]:.1f} m** to **{depth_window[1]:.1f} m** "
+        f"({depth_window[1] - depth_window[0]:.1f} m span)*"
+    )
 
 col1, col2, col3, col4, col5 = st.columns(5)
 
 with col1:
+    depth_lbl = "Bit Measured Depth" if surveillance_mode == "🔴 Live RTOC Streaming Simulation" else "Measured Depth"
     st.markdown(
         f"""
         <div class="metric-card">
-            <div class="metric-title">Measured Depth</div>
+            <div class="metric-title">{depth_lbl}</div>
             <div class="metric-value">{float(df_filtered['depth'].max()):.1f} <span style="font-size:1rem;color:#94a3b8">m</span></div>
-            <div class="metric-sub">Span: {depth_window[1] - depth_window[0]:.1f} m</div>
+            <div class="metric-sub">Progress: {((float(df_filtered['depth'].max()) - d_min_total) / max(1.0, d_max_total - d_min_total) * 100):.1f}% of section</div>
         </div>
         """,
         unsafe_allow_html=True,
     )
 
 with col2:
+    rop_lbl = "Instant ROP" if surveillance_mode == "🔴 Live RTOC Streaming Simulation" else "Avg ROP"
     st.markdown(
         f"""
         <div class="metric-card">
-            <div class="metric-title">Avg ROP</div>
+            <div class="metric-title">{rop_lbl}</div>
             <div class="metric-value">{cur_rop:.1f} <span style="font-size:1rem;color:#94a3b8">m/hr</span></div>
             <div class="metric-sub">{(cur_rop / 0.3048):.1f} ft/hr</div>
         </div>
@@ -332,10 +422,11 @@ with col2:
     )
 
 with col3:
+    mse_lbl = "Instant Teale MSE" if surveillance_mode == "🔴 Live RTOC Streaming Simulation" else "Avg Teale MSE"
     st.markdown(
         f"""
         <div class="metric-card">
-            <div class="metric-title">Teale MSE</div>
+            <div class="metric-title">{mse_lbl}</div>
             <div class="metric-value">{cur_mse:,.0f} <span style="font-size:1rem;color:#94a3b8">psi</span></div>
             <div class="metric-sub">{(cur_mse * 0.00689476):.1f} MPa</div>
         </div>
@@ -356,7 +447,7 @@ with col4:
         <div class="metric-card">
             <div class="metric-title">Stick-Slip Index</div>
             <div class="metric-value" style="font-size:1.5rem">{badge_html}</div>
-            <div class="metric-sub">SPE Threshold: &lt; 0.50</div>
+            <div class="metric-sub">Threshold: &lt; 0.50 SPE</div>
         </div>
         """,
         unsafe_allow_html=True,
@@ -366,13 +457,84 @@ with col5:
     st.markdown(
         f"""
         <div class="metric-card">
-            <div class="metric-title">Rig State</div>
-            <div class="metric-value" style="font-size:1.3rem;color:#38bdf8">{cur_rig_state.replace('_', ' ')}</div>
-            <div class="metric-sub">Active Telemetry Online</div>
+            <div class="metric-title">Rig State & Formation</div>
+            <div class="metric-value" style="font-size:1.15rem;color:#38bdf8">{cur_formation}</div>
+            <div class="metric-sub">{cur_rig_state.replace('_', ' ')}</div>
         </div>
         """,
         unsafe_allow_html=True,
     )
+
+# =============================================================================
+# Live Streaming Controls & Real-Time Oscilloscope Panel
+# =============================================================================
+if surveillance_mode == "🔴 Live RTOC Streaming Simulation":
+    alarm_info = evaluate_realtime_alarm(cur_row)
+
+    # Real-Time Downhole Advisory Alert Banner
+    st.markdown(
+        f"""
+        <div style="background-color:#10192d;border-left:5px solid {alarm_info['color']};padding:14px 18px;border-radius:6px;margin-top:10px;margin-bottom:14px;box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3);">
+            <div style="font-size:1.05rem;font-weight:700;color:{alarm_info['color']}">{alarm_info['title']}</div>
+            <div style="font-size:0.92rem;color:#cbd5e1;margin-top:4px;line-height:1.4">{alarm_info['diagnostic']}</div>
+            <div style="font-size:0.88rem;color:#38bdf8;font-weight:600;margin-top:6px">💡 {alarm_info['recommendation']}</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    # Transport Controls Bar
+    ctrl_col1, ctrl_col2, ctrl_col3, ctrl_col4 = st.columns([1.5, 1.2, 1.2, 1.2])
+    with ctrl_col1:
+        is_playing = st.session_state.get("is_streaming", False)
+        if is_playing:
+            if st.button("⏸ Pause Stream", use_container_width=True):
+                st.session_state["is_streaming"] = False
+                st.rerun()
+        else:
+            if st.button("▶ Start Live Stream", type="primary", use_container_width=True):
+                st.session_state["is_streaming"] = True
+                st.rerun()
+
+    with ctrl_col2:
+        if st.button("⏩ Step (+10m)", use_container_width=True):
+            st.session_state["stream_idx"] = min(len(df) - 1, cur_idx + 50)
+            st.rerun()
+
+    with ctrl_col3:
+        if st.button("↺ Reset Bit (2000m)", use_container_width=True):
+            st.session_state["stream_idx"] = 60
+            st.session_state["is_streaming"] = False
+            st.rerun()
+
+    with ctrl_col4:
+        st.markdown(
+            f"<div style='padding-top:8px;font-size:0.85rem;color:#94a3b8'>Bit Status: <b style='color:#38bdf8'>{'STREAMING' if is_playing else 'STANDBY'}</b></div>",
+            unsafe_allow_html=True,
+        )
+
+    # Rolling Oscilloscope Window
+    window_samples = 60
+    df_window = df.iloc[max(0, cur_idx - window_samples) : cur_idx + 1]
+
+    st.markdown("#### 📈 Real-Time MWD Telemetry Oscilloscope (Active Drilling Window)")
+    osci_fig = create_live_oscilloscope_plot(df_window)
+    st.plotly_chart(osci_fig, use_container_width=True)
+
+    # Auto-advance streaming loop if active
+    if is_playing:
+        delay = 0.04 if "High" in stream_speed else (0.12 if "Normal" in stream_speed else 0.28)
+        # Advance 15 samples per frame
+        advance_steps = 12
+        if cur_idx + advance_steps >= len(df) - 1:
+            st.session_state["stream_idx"] = len(df) - 1
+            st.session_state["is_streaming"] = False
+            st.toast("🏁 Total section depth reached (2500m)!", icon="🏁")
+            st.rerun()
+        else:
+            st.session_state["stream_idx"] = cur_idx + advance_steps
+            time.sleep(delay)
+            st.rerun()
 
 st.markdown("---")
 
