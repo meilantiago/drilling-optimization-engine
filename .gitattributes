@@ -1,0 +1,4 @@
+# Treat LAS (Log ASCII Standard) petrophysical well log files as data, not Lasso code
+*.las linguist-detectable=false
+*.las linguist-documentation=false
+*.las linguist-data=true
