@@ -45,5 +45,3 @@ data/raw/*
 .DS_Store
 Thumbs.db
 
-# Streamlit
-.streamlit/

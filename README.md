@@ -1,10 +1,10 @@
 # DrillOpt-Engine
 
-A Python library and real-time operations telemetry framework for rotary drilling mechanics, Mechanical Specific Energy (MSE) monitoring, torsional vibration diagnostics, and drilling parameter optimization.
+A Python library for rotary drilling mechanics, Mechanical Specific Energy (MSE) monitoring, torsional vibration diagnostics, and drilling parameter optimization.
 
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](https://opensource.org/licenses/MIT)
-[![Tests: 51/51 Passing](https://img.shields.io/badge/tests-51%2F51%20passing-brightgreen.svg)](https://pytest.org)
+[![Tests](https://github.com/meilantiago/drilling-optimization-engine/actions/workflows/tests.yml/badge.svg)](https://github.com/meilantiago/drilling-optimization-engine/actions/workflows/tests.yml)
 [![Data Formats: LAS 2.0 | Parquet](https://img.shields.io/badge/formats-LAS%202.0%20%7C%20Parquet-orange.svg)](#telemetry-ingestion-and-standards)
 
 ---
@@ -18,7 +18,6 @@ In deep horizontal and directional wells, non-productive time (NPT) caused by dr
 - Detect **torsional stick-slip** oscillations and identify drillstring acoustic resonance risks using spectral decomposition (FFT / Welch PSD).
 - Locate the **Founder Point** (the physical threshold where increasing WOB ceases to improve ROP due to bit balling or bottom-hole cutter pack-off).
 - Deliver real-time diagnostic advisories conforming to the **SPE/IADC 92194** diagnostic workflow.
-- Simulate and visualize drilling telemetry through a multi-track subsurface log viewer and an interactive Real-Time Operations Center (RTOC) dashboard.
 
 ---
 
@@ -75,7 +74,7 @@ Frequencies are extracted via Fast Fourier Transform (FFT) and Welch Power Spect
 
 ### 3. Normalized Drillability and Pore Pressure ($D$-exponent)
 
-To decouple rock drillability from surface operational parameters, Jordan and Shirley (1966) formulated the dimensionless $D$-exponent:
+To decouple rock drillability from surface operational parameters, Jorden and Shirley (1966) formulated the dimensionless $D$-exponent:
 
 $$D = \frac{\log_{10}\left(\frac{\text{ROP}}{60 \cdot \text{RPM}}\right)}{\log_{10}\left(\frac{12 \cdot \text{WOB}}{10^6 \cdot D_b}\right)}$$
 
@@ -94,11 +93,11 @@ Reversals in the normally increasing compaction trend of $D_c$ with depth are mo
 - **Nozzle Exit Velocity ($v_n$):**
   $$v_n = \frac{0.32086 \cdot Q}{\text{TFA}} \quad [\text{ft/s}]$$
 - **Bit Pressure Drop ($\Delta P_{\text{bit}}$):**
-  $$\Delta P_{\text{bit}} = \frac{\rho \cdot Q^2}{10858 \cdot C_d^2 \cdot \text{TFA}^2} \quad [\text{psi}]$$
+  $$\Delta P_{\text{bit}} = \frac{\rho \cdot Q^2}{12032 \cdot C_d^2 \cdot \text{TFA}^2} \quad [\text{psi}]$$
 - **Hydraulic Horsepower per Square Inch (HSI):**
   $$\text{HSI} = \frac{\Delta P_{\text{bit}} \cdot Q}{1714 \cdot A_b} \quad \left[\frac{\text{hp}}{\text{in}^2}\right]$$
 - **Jet Impact Force ($F_j$):**
-  $$F_j = 0.01823 \cdot C_d \cdot Q \cdot \sqrt{\rho \cdot \Delta P_{\text{bit}}} \quad [\text{lbf}]$$
+  $$F_j = \frac{\rho \cdot Q \cdot v_n}{1930.4} \quad [\text{lbf}]$$
 
 ---
 
@@ -132,17 +131,10 @@ drilling-optimization-engine/
 │   │   ├── stick_slip.py           # SSI, FFT/Welch spectral analysis, resonance risk
 │   │   ├── bit_bounce.py           # Axial vibration index (AVI), impact shocks
 │   │   └── wear_model.py           # Cumulative energy dissipation and IADC bit dull grading
-│   ├── optimizer/
-│   │   ├── founder_point.py        # Automated founder point detection algorithms
-│   │   └── road_map.py             # Operational parameter recommendation and ROI model
-│   └── app/
-│       ├── main.py                 # Streamlit application entrypoint
-│       └── components/
-│           ├── live_stream.py      # RTOC streaming simulation, alarms and oscilloscope
-│           ├── log_plot.py         # Subsurface multi-track log viewer (7 synchronized tracks)
-│           ├── cross_plots.py      # Founder point cross-plots and vibration spectra
-│           └── simulator.py        # Interactive "What-If" parameter and ROI simulator
-└── tests/                          # Automated test suite (51 unit and integration tests)
+│   └── optimizer/
+│       ├── founder_point.py        # Automated founder point detection algorithms
+│       └── road_map.py             # Operational parameter recommendation and ROI model
+└── tests/                          # Automated pytest suite
     ├── test_units.py
     ├── test_loader.py
     ├── test_rig_state.py
@@ -156,18 +148,18 @@ drilling-optimization-engine/
 
 ## Telemetry Ingestion and Standards
 
-The data loader ([`src/data/loader.py`](file:///c:/Users/Usuario%201/Desktop/CONSEGUIR%20TRABAJO/Proyectos/drilling-optimization-engine/src/data/loader.py)) harmonizes heterogeneous oilfield telemetry mnemonics:
+The data loader ([`src/data/loader.py`](src/data/loader.py)) maps common oilfield telemetry mnemonics to canonical channel names. Units are **not** converted automatically: input curves must already be in the units below.
 
-| Canonical Channel | Standard Unit | Recognized MWD/LWD Mnemonics |
+| Canonical Channel | Expected Unit | Recognized Mnemonics |
 |---|---|---|
-| `depth` | $\text{m}$ or $\text{ft}$ | `DEPT`, `DEPTH`, `MD`, `MEASURED_DEPTH` |
-| `wob` | $\text{klbf}$ | `WOB`, `SWOB`, `DWOB`, `WOB_K`, `WEIGHT_ON_BIT` |
-| `rop` | $\text{m/hr}$ or $\text{ft/hr}$ | `ROP`, `ROPA`, `ROP_AVG`, `RATE_OF_PENETRATION` |
-| `rpm` | $\text{rev/min}$ | `RPM`, `SRPM`, `RPM_SURF`, `ROTARY_SPEED` |
-| `torque` | $\text{ft-lbf}$ or $\text{kN}\cdot\text{m}$ | `TORQUE`, `STOR`, `TORQ`, `TQ`, `SURFACE_TORQUE` |
-| `flow` | $\text{gpm}$ or $\text{L/min}$ | `FLOW`, `FLOWIN`, `PUMP`, `FLOW_RATE`, `Q` |
-| `spp` | $\text{psi}$ | `SPP`, `PUMP_PRESS`, `PRESSURE`, `STANDPIPE_PRESSURE` |
-| `gamma` | $\text{gAPI}$ | `GR`, `GAM`, `GAMMA`, `GR_CORR`, `GAMMA_RAY` |
+| `depth` | m | `DEPTH`, `DEPT`, `MD`, `MEASURED_DEPTH`, `BIT_DEPTH`, `HOLE_DEPTH` |
+| `rop` | m/hr | `ROP`, `ROPA`, `ROP_AVG`, `RATE_OF_PENETRATION`, `ROP5`, `ROPM` |
+| `wob` | klbf | `WOB`, `SWOB`, `DWOB`, `WEIGHT_ON_BIT`, `WOB_AVG`, `WOB_SURF` |
+| `rpm` | rev/min | `RPM`, `SRPM`, `DRPM`, `SURF_RPM`, `BIT_RPM`, `ROTARY_SPEED` |
+| `torque` | ft-lbf | `TORQUE`, `TORQ`, `STOR`, `SURF_TORQUE`, `BIT_TORQUE`, `TORQUE_AVG` |
+| `flow` | gpm | `FLOW`, `FLOW_IN`, `FLOWIN`, `PUMP_FLOW`, `FLOW_RATE`, `Q_PUMP` |
+| `spp` | psi | `SPP`, `STANDPIPE_PRESSURE`, `PUMP_PRESS`, `PUMP_PRESSURE`, `PRESS_SPP` |
+| `gamma` | gAPI | `GR`, `GAM`, `GAMMA`, `GR_CAL`, `GAMMA_RAY`, `GRD` |
 
 ---
 
@@ -203,7 +195,7 @@ pip install -r requirements.txt
 
 ## Verification and Testing
 
-The repository includes 51 automated unit and integration tests verifying numerical consistency, unit conversions, division-by-zero handling, and end-to-end pipeline execution.
+The repository includes 52 automated unit and integration tests verifying numerical consistency, unit conversions, division-by-zero handling, and end-to-end pipeline execution.
 
 Run the test suite via pytest:
 ```bash
@@ -212,35 +204,23 @@ python -m pytest tests/ -v
 
 Expected output:
 ```text
-============================= 51 passed in 1.60s =============================
+============================= 52 passed =============================
 ```
 
 ---
 
-## Running the RTOC Dashboard
+## Limitations
 
-Launch the Streamlit web application:
-```bash
-python -m streamlit run src/app/main.py
-```
+All results in this repository come from a **synthetic** benchmark well (`data/processed/benchmark_drilling.*`) produced by `src/data/generator.py`. No field data has been run through the pipeline yet. Known gaps:
 
-### Features available in the application:
-1. **Live RTOC Telemetry Streaming Simulation**:
-   - Interactive transport controls (`Start Live Stream`, `Pause`, `Step +10m`, `Reset Bit`).
-   - Dynamic real-time MWD gauges updating as the bit advances through geological formations.
-   - Rule-based **SPE 92194 Real-Time Advisory Banners** detecting clean shearing, founder point, or critical stick-slip with actionable operational mitigations.
-   - High-frequency 4-channel strip-chart oscilloscope.
-2. **Subsurface Multi-Track Log View**:
-   - 7 synchronized depth-indexed tracks: Gamma Ray, WOB, RPM (surface vs. bit), Torque, ROP with $D_c$-exponent, Teale MSE vs. Rock UCS with dysfunction shading, and Stick-Slip Severity Index.
-3. **Dysfunction Diagnostics**:
-   - Localized Founder Point regression cross-plots.
-   - Welch PSD frequency spectrum cross-referenced with drillstring acoustic resonance modes ($f_0, 3f_0, 5f_0$).
-   - Cumulative PDC cutter energy dissipation and IADC dull grading.
-4. **Drilling Optimization and ROI**:
-   - Formation-by-formation parameter road map with recommended WOB, RPM, and flow rates.
-   - Rig Day Rate savings calculator quantifying drilling hours saved and direct USD cost reductions.
-5. **Geological Benchmark Generator**:
-   - Interactive generator producing randomized synthetic wells with variable stratigraphy, rock hardness, and sensor noise for algorithm validation.
+- **Founder point validation is circular.** The generator places the ROP peak at a known `founder_wob` per formation and the analyzer recovers it. Recovery is close in shale and sandstone, but it is off by about 11% in limestone and 24% in dolomite, where the interval is misclassified as pre-founder.
+- **Projected ROP gain and savings are rule-based.** The road map applies fixed scaling factors and never projects a ROP below baseline, so it reports a gain even on flat data with no WOB exploration.
+- **Simulator columns leak into the optimizer.** When the input has `ssi` or `mse_psi` columns (the benchmark does), they are used directly instead of being recomputed.
+- **Vibration analysis on a depth log.** Stick-slip and bit bounce need high-frequency time series (downhole RPM, accelerations). At 0.2 m sampling (~40 s per sample) the indices are only depth-averaged proxies, and SSI is computed from surface RPM.
+- **No unit conversion on LAS load.** Curves must already be in the expected units listed above.
+- **Founder definition.** The founder is taken as the ROP maximum of a fitted parabola, while Dupriest defines it as the onset of non-linear ROP response. A single founder is applied across all formations in an interval.
+- **Hydraulics** cover bit-level terms only (TFA, jet velocity, bit ΔP, HSI, impact force). There are no parasitic pressure losses, ECD or rheology models, so SPP is not used as a constraint.
+- **Bit wear** is a relative excess-energy index, not a calibrated IADC dull grade.
 
 ---
 
@@ -248,7 +228,7 @@ python -m streamlit run src/app/main.py
 
 1. **Teale, R.** (1965). *The Concept of Specific Energy in Rock Drilling*. International Journal of Rock Mechanics and Mining Sciences & Geomechanics Abstracts, 2(1), 57-73.
 2. **Dupriest, F. E., & Koederitz, W. L.** (2005). *Maximizing Drill Rates with Real-Time Surveillance of Mechanical Specific Energy*. SPE/IADC Drilling Conference, SPE/IADC 92194.
-3. **Jordan, J. R., & Shirley, O. J.** (1966). *Application of Recommended Formation Evaluation Programs in the Gulf Coast Area*. Journal of Petroleum Technology, 18(10), 1335-1342. SPE 1395.
+3. **Jorden, J. R., & Shirley, O. J.** (1966). *Application of Drilling Performance Data to Overburden and Formation Pressure Detection*. Journal of Petroleum Technology, 18(11). SPE 1407.
 4. **Rehm, W. A., & McClendon, R.** (1971). *Measurement of Formation Pressure From Drilling Data*. SPE Annual Fall Meeting, SPE 3601.
 5. **Eaton, B. A.** (1975). *The Equation for Geopressure Prediction from Well Logs*. SPE Annual Fall Meeting, SPE 5544.
 6. **Brett, J. F.** (1992). *The Genesis of Torsional Drillstring Vibrations*. SPE Drilling Engineering, 7(3), 168-174. SPE 18049.

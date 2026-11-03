@@ -20,7 +20,7 @@ import pandas as pd
 # Canonical alias dictionary mapping industry curve mnemonics to standard names
 MNEMONIC_MAP: Dict[str, List[str]] = {
     "depth": [
-        "DEPTH", "DEPT", "MD", "MEASURED_DEPTH", "BIT_DEPTH", "HOLE_DEPTH", "TVD"
+        "DEPTH", "DEPT", "MD", "MEASURED_DEPTH", "BIT_DEPTH", "HOLE_DEPTH"
     ],
     "rop": [
         "ROP", "ROPA", "ROP_AVG", "RATE_OF_PENETRATION", "ROP5", "ROPM"

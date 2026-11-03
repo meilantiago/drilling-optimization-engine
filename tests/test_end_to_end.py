@@ -19,7 +19,7 @@ from src.data.generator import DrillingDataGenerator
 from src.data.loader import DrillingDataLoader
 from src.data.rig_state import RigState, RigStateClassifier
 from src.physics.mse import teale_mse, dupriest_mse, mechanical_efficiency
-from src.physics.d_exponent import jordan_shirley_d_exponent, rehm_mcclendon_dc_exponent
+from src.physics.d_exponent import jorden_shirley_d_exponent, rehm_mcclendon_dc_exponent
 from src.physics.hydraulics import nozzle_tfa, hydraulic_horsepower_per_sq_in
 from src.dynamics.stick_slip import compute_stick_slip_index, analyze_torsional_fft, drillstring_torsional_natural_frequency
 from src.dynamics.bit_bounce import compute_axial_vibration_index, detect_axial_shocks
@@ -79,7 +79,7 @@ def test_complete_drilling_pipeline_end_to_end(tmp_path: Path):
     assert np.all(dup_mse < mse_psi)
 
     # D-exponent & Hydraulics
-    d_exp = jordan_shirley_d_exponent(rop=rop_ft_hr, rpm=rpm, wob=wob_lbf, bit_diameter=bit_diam_in)
+    d_exp = jorden_shirley_d_exponent(rop=rop_ft_hr, rpm=rpm, wob=wob_lbf, bit_diameter=bit_diam_in)
     dc_exp = rehm_mcclendon_dc_exponent(d_exponent=d_exp, actual_mud_weight=10.5, normal_mud_weight=9.0)
     assert np.all(np.isfinite(d_exp))
     assert np.all(np.isfinite(dc_exp))

@@ -18,7 +18,7 @@ from .d_exponent import (
     detect_pore_pressure_anomaly,
     eaton_pore_pressure,
     fit_normal_compaction_trend,
-    jordan_shirley_d_exponent,
+    jorden_shirley_d_exponent,
     rehm_mcclendon_dc_exponent,
 )
 from .hydraulics import (
@@ -39,7 +39,7 @@ __all__ = [
     "psi_to_mpa",
     "mpa_to_psi",
     # D-exponent
-    "jordan_shirley_d_exponent",
+    "jorden_shirley_d_exponent",
     "rehm_mcclendon_dc_exponent",
     "fit_normal_compaction_trend",
     "detect_pore_pressure_anomaly",

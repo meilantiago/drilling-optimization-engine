@@ -82,7 +82,11 @@ def nozzle_velocity(
         Jet nozzle exit velocity in ft/s. Returns np.nan where TFA <= 0 or Q < 0.
     """
     is_series = isinstance(flow_rate, pd.Series) or isinstance(tfa, pd.Series)
-    series_index = getattr(flow_rate, "index", None) or getattr(tfa, "index", None)
+    series_index = None
+    for x in (flow_rate, tfa):
+        if isinstance(x, pd.Series):
+            series_index = x.index
+            break
     is_scalar = not isinstance(flow_rate, (np.ndarray, pd.Series, list, tuple)) and not isinstance(
         tfa, (np.ndarray, pd.Series, list, tuple)
     )

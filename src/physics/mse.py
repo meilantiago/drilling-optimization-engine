@@ -273,7 +273,11 @@ def mechanical_efficiency(
         Returns np.nan if MSE <= 0 or UCS <= 0.
     """
     is_series = isinstance(mse_teale, pd.Series) or isinstance(ucs, pd.Series)
-    series_index = getattr(mse_teale, "index", None) or getattr(ucs, "index", None)
+    series_index = None
+    for x in (mse_teale, ucs):
+        if isinstance(x, pd.Series):
+            series_index = x.index
+            break
     is_scalar = not isinstance(mse_teale, (np.ndarray, pd.Series, list, tuple)) and not isinstance(
         ucs, (np.ndarray, pd.Series, list, tuple)
     )
@@ -311,7 +315,11 @@ def over_energy_ratio(
         Dimensionless over-energy ratio MSE / UCS.
     """
     is_series = isinstance(mse_teale, pd.Series) or isinstance(ucs, pd.Series)
-    series_index = getattr(mse_teale, "index", None) or getattr(ucs, "index", None)
+    series_index = None
+    for x in (mse_teale, ucs):
+        if isinstance(x, pd.Series):
+            series_index = x.index
+            break
     is_scalar = not isinstance(mse_teale, (np.ndarray, pd.Series, list, tuple)) and not isinstance(
         ucs, (np.ndarray, pd.Series, list, tuple)
     )

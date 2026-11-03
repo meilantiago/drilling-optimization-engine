@@ -8,10 +8,8 @@ lasio>=0.31
 # Machine learning & signal modeling
 scikit-learn>=1.3.0
 
-# Visualization & web dashboard
-plotly>=5.18.0
+# Visualization
 matplotlib>=3.8.0
-streamlit>=1.30.0
 
 # Quality assurance & testing
 pytest>=7.4.0

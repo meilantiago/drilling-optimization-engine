@@ -1,7 +1,7 @@
 """D-exponent and corrected Dc-exponent pore pressure calculations.
 
 Formulations:
-- Jordan & Shirley (1966): Dimensionless drilling exponent (D-exponent) normalized
+- Jorden & Shirley (1966): Dimensionless drilling exponent (D-exponent) normalized
   for ROP, rotary speed, bit diameter, and weight on bit.
 - Rehm & McClendon (1971): Corrected Dc-exponent accounting for mud weight differences
   relative to normal hydrostatic formation pressure.
@@ -9,8 +9,9 @@ Formulations:
   from the normal compaction trend (NCT).
 
 References:
-    - Jordan, J. R., & Shirley, O. J. (1966). Application of Drillability Concepts
-      to Overburden and Pore Pressure Detection. Journal of Petroleum Technology, 18(05).
+    - Jorden, J. R., & Shirley, O. J. (1966). Application of Drilling Performance Data
+      to Overburden and Formation Pressure Detection. Journal of Petroleum Technology,
+      18(11). SPE 1407.
     - Rehm, W. A., & McClendon, R. (1971). Measurement of Formation Pressure from
       Drilling Data. SPE 3601.
     - Eaton, B. A. (1975). The Equation for Geopressure Prediction from Well Logs.
@@ -22,13 +23,13 @@ import numpy as np
 import pandas as pd
 
 
-def jordan_shirley_d_exponent(
+def jorden_shirley_d_exponent(
     rop: Union[float, int, np.ndarray, pd.Series],
     rpm: Union[float, int, np.ndarray, pd.Series],
     wob: Union[float, int, np.ndarray, pd.Series],
     bit_diameter: Union[float, int, np.ndarray, pd.Series],
 ) -> Union[float, np.ndarray, pd.Series]:
-    """Calculate the Jordan & Shirley (1966) D-exponent.
+    """Calculate the Jorden & Shirley (1966) D-exponent.
 
     Formula:
         D = log10(ROP / (60 * RPM)) / log10((12 * WOB) / (1e6 * D_b))
@@ -97,7 +98,7 @@ def rehm_mcclendon_dc_exponent(
         Dc = D * (normal_mud_weight / actual_mud_weight)
 
     Args:
-        d_exponent: Jordan & Shirley D-exponent (dimensionless).
+        d_exponent: Jorden & Shirley D-exponent (dimensionless).
         actual_mud_weight: Actual drilling fluid density (e.g. ppg or SG).
         normal_mud_weight: Normal pore fluid equivalent density (default 9.0 ppg,
             or 8.33 ppg for pure fresh water).
@@ -264,7 +265,11 @@ def eaton_pore_pressure(
         Estimated pore pressure gradient in same units as OBG and normal_pore_gradient.
     """
     is_series = any(isinstance(x, pd.Series) for x in (dc_exponent, dc_normal))
-    series_index = getattr(dc_exponent, "index", None) or getattr(dc_normal, "index", None)
+    series_index = None
+    for x in (dc_exponent, dc_normal):
+        if isinstance(x, pd.Series):
+            series_index = x.index
+            break
     is_scalar = not any(
         isinstance(x, (np.ndarray, pd.Series, list, tuple))
         for x in (dc_exponent, dc_normal, overburden_gradient, normal_pore_gradient)

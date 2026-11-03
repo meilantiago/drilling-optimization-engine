@@ -17,7 +17,7 @@ from src.physics.d_exponent import (
     detect_pore_pressure_anomaly,
     eaton_pore_pressure,
     fit_normal_compaction_trend,
-    jordan_shirley_d_exponent,
+    jorden_shirley_d_exponent,
     rehm_mcclendon_dc_exponent,
 )
 from src.physics.hydraulics import (
@@ -155,8 +155,8 @@ def test_mechanical_efficiency_and_over_energy_ratio():
 # D-exponent Module Tests
 # =====================================================================
 
-def test_jordan_shirley_d_exponent():
-    """Test Jordan & Shirley D-exponent calculation."""
+def test_jorden_shirley_d_exponent():
+    """Test Jorden & Shirley D-exponent calculation."""
     rop = 60.0       # ft/hr
     rpm = 100.0      # RPM
     wob = 30000.0    # lbf
@@ -167,7 +167,7 @@ def test_jordan_shirley_d_exponent():
     den = np.log10((12.0 * 30000.0) / (1.0e6 * 8.5))     # log10(360000 / 8500000)
     expected_d = num / den
 
-    d_calc = jordan_shirley_d_exponent(rop=rop, rpm=rpm, wob=wob, bit_diameter=db)
+    d_calc = jorden_shirley_d_exponent(rop=rop, rpm=rpm, wob=wob, bit_diameter=db)
     assert pytest.approx(d_calc, rel=1e-4) == expected_d
     assert 1.0 < d_calc < 2.0
 
@@ -286,3 +286,26 @@ def test_jet_impact_force_and_annular_velocity():
 
     va_ft_s = annular_velocity(flow_rate=500.0, hole_diameter=8.5, pipe_outer_diameter=5.0, in_feet_per_minute=False)
     assert pytest.approx(va_ft_s, rel=1e-4) == expected_va / 60.0
+
+
+def test_pairwise_functions_accept_pandas_series():
+    """Two-argument physics functions must accept DataFrame columns and keep their index."""
+    idx = pd.RangeIndex(10, 13)
+    mse = pd.Series([30000.0, 45000.0, 60000.0], index=idx)
+    ucs = pd.Series([15000.0, 15000.0, 15000.0], index=idx)
+
+    eff = mechanical_efficiency(mse, ucs)
+    oer = over_energy_ratio(mse, ucs)
+    vn = nozzle_velocity(flow_rate=pd.Series([400.0, 500.0, 600.0], index=idx), tfa=0.44)
+    ppg = eaton_pore_pressure(
+        dc_exponent=pd.Series([1.2, 1.4, 1.6], index=idx),
+        dc_normal=1.6,
+        overburden_gradient=1.0,
+        normal_pore_gradient=0.465,
+    )
+
+    for result in (eff, oer, vn, ppg):
+        assert isinstance(result, pd.Series)
+        assert result.index.equals(idx)
+    assert np.allclose(eff.to_numpy(), ucs.to_numpy() / mse.to_numpy())
+    assert np.allclose(oer.to_numpy(), mse.to_numpy() / ucs.to_numpy())
